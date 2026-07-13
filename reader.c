@@ -98,7 +98,10 @@ int main (int argc, char **argv){
     }
 
 
-    sem_wait(shmzugriff);
+    if (sem_wait(shmzugriff) == -1) {
+        perror("Fehler bei sem_wait in reader");
+        return EXIT_FAILURE;
+    }
     int shm_id=shmget(345345,10000, 0666 | IPC_CREAT| IPC_EXCL);
     if (shm_id==-1) {
         shm_id=shmget(345345, 0, 0);
@@ -108,26 +111,47 @@ int main (int argc, char **argv){
         }
     }
     void *shmaddress = shmat(shm_id, NULL, 0666 | IPC_CREAT| IPC_EXCL);
-    sem_post(shmzugriff);
-    sem_post(gelesen);
+    if (sem_post(shmzugriff) == -1) {
+        perror("Fehler bei sem_post in reader");
+        return EXIT_FAILURE;
+    }
+    if (sem_post(gelesen) == -1) {
+        perror("Fehler bei sem_post in reader");
+        return EXIT_FAILURE;
+    }
     frame.pageNo=0;
     while (terminieren==0) {
         struct data buf;
-        sem_wait(geschrieben);
-        sem_wait(shmzugriff);
+        if (sem_wait(geschrieben) == -1) {
+            perror("Fehler bei sem_wait in reader");
+            return EXIT_FAILURE;
+        }
+        if (sem_wait(shmzugriff) == -1) {
+            perror("Fehler bei sem_wait in reader");
+            return EXIT_FAILURE;
+        }
         memcpy(&buf, shmaddress,sizeof(buf)); //maximal Größe des structs lesen
-        sem_post(shmzugriff);
+        if (sem_post(shmzugriff) == -1) {
+            perror("Fehler bei sem_post in reader");
+            return EXIT_FAILURE;
+        }
         sprintf(frame.page[0], "RAM: %.2f", buf.ram);
         sprintf(frame.page[1], "Cpu-Last: %.2f", buf.cpu);
         sprintf(frame.page[2], "Prozesse: %d", buf.prozesse);
         sprintf(frame.page[3], "Uptime: %0.2fh", buf.uptime);
         printf("%s %s %s %s \n", frame.page[0], frame.page[1], frame.page[2], frame.page[3]);
-        sem_post(gelesen);
+        if (sem_post(gelesen) == -1) {
+            perror("Fehler bei sem_post in reader");
+            return EXIT_FAILURE;
+        }
         if (write(socket_fd, &frame, sizeof(frame)) != sizeof(frame))
             err(EXIT_FAILURE, "partial/failed write\n");
         sleep(1);
     }
-    shmdt(shmaddress);
+    if (shmdt(shmaddress) == -1) {
+        perror("Fehler bei shmdt in reader");
+        return EXIT_FAILURE;
+    }
 
     //ToDo Ende
 

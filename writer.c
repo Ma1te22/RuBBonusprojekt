@@ -10,7 +10,7 @@
 #include<fcntl.h>
 #include<signal.h>
 
-
+//Jaron Walter und Malte Schmidt(Donnerstag, 12:00)
  typedef struct {
      float memtotal;
      float cpu;

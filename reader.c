@@ -17,6 +17,7 @@
 #include<semaphore.h>
 #include<fcntl.h>
 
+//Jaron Walter und Malte Schmidt(Donnerstag, 12:00)
 int terminieren=0;
 
 void sigTermHandler(int signo) {

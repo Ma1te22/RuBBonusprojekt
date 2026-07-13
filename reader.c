@@ -68,16 +68,17 @@ int main (int argc, char **argv){
         errx(EXIT_FAILURE, "Could not connect");
     freeaddrinfo(result);  //No longer needed
 
-    dataframe frame;
-
+    dataframe frame0;
+    dataframe frame1;
 
     //TODO: Shared Memory auslesen, frame(s) befüllen und absenden
-    struct data {
+    typedef struct{
+        float memtotal;
         float cpu;
         float ram;
         float uptime;
         int prozesse;
-    };
+    }data;
 
     sem_t *shmzugriff=sem_open("/shmzugriff", O_CREAT, 0666, 1);
     if (shmzugriff== SEM_FAILED) {
@@ -98,11 +99,8 @@ int main (int argc, char **argv){
     }
 
 
-    if (sem_wait(shmzugriff) == -1) {
-        perror("Fehler bei sem_wait in reader");
-        return EXIT_FAILURE;
-    }
-    int shm_id=shmget(345345,10000, 0666 | IPC_CREAT| IPC_EXCL);
+    sem_wait(shmzugriff);
+    int shm_id=shmget(345345,sizeof(data), 0666 | IPC_CREAT| IPC_EXCL);
     if (shm_id==-1) {
         shm_id=shmget(345345, 0, 0);
         if (shm_id<0) {
@@ -111,53 +109,45 @@ int main (int argc, char **argv){
         }
     }
     void *shmaddress = shmat(shm_id, NULL, 0666 | IPC_CREAT| IPC_EXCL);
-    if (sem_post(shmzugriff) == -1) {
-        perror("Fehler bei sem_post in reader");
-        return EXIT_FAILURE;
-    }
-    if (sem_post(gelesen) == -1) {
-        perror("Fehler bei sem_post in reader");
-        return EXIT_FAILURE;
-    }
-    frame.pageNo=0;
+    sem_post(shmzugriff);
+    sem_post(gelesen);
+    frame0.pageNo=0;
+    frame1.pageNo=1;
+
+    data buf;
+
+    sem_wait(geschrieben);
+    sem_post(geschrieben);
+    sem_wait(shmzugriff);
+    memcpy(&buf, shmaddress,sizeof(buf)); //maximal Größe des structs lesen
+    sem_post(shmzugriff);
+    sprintf(frame0.page[0], "Systemmonitor");
+    sprintf(frame0.page[1], "Willkommen!");
+    sprintf(frame0.page[2], "Insgesamt:");
+    sprintf(frame0.page[3], "%.1fGiB RAM", buf.memtotal/(1024*1024*1024));
+    printf("%s %s %s %s \n", frame0.page[0], frame0.page[1], frame0.page[2], frame0.page[3]);
+
     while (terminieren==0) {
-        struct data buf;
-        if (sem_wait(geschrieben) == -1) {
-            perror("Fehler bei sem_wait in reader");
-            return EXIT_FAILURE;
-        }
-        if (sem_wait(shmzugriff) == -1) {
-            perror("Fehler bei sem_wait in reader");
-            return EXIT_FAILURE;
-        }
+        sem_wait(geschrieben);
+        sem_wait(shmzugriff);
         memcpy(&buf, shmaddress,sizeof(buf)); //maximal Größe des structs lesen
-        if (sem_post(shmzugriff) == -1) {
-            perror("Fehler bei sem_post in reader");
-            return EXIT_FAILURE;
-        }
-        sprintf(frame.page[0], "RAM: %.2f", buf.ram);
-        sprintf(frame.page[1], "Cpu-Last: %.2f", buf.cpu);
-        sprintf(frame.page[2], "Prozesse: %d", buf.prozesse);
-        sprintf(frame.page[3], "Uptime: %0.2fh", buf.uptime);
-        printf("%s %s %s %s \n", frame.page[0], frame.page[1], frame.page[2], frame.page[3]);
-        if (sem_post(gelesen) == -1) {
-            perror("Fehler bei sem_post in reader");
-            return EXIT_FAILURE;
-        }
-        if (write(socket_fd, &frame, sizeof(frame)) != sizeof(frame))
+        sem_post(shmzugriff);
+        sprintf(frame1.page[0], "RAM: %.2f", buf.ram);
+        sprintf(frame1.page[1], "Cpu-Last: %.2f", buf.cpu);
+        sprintf(frame1.page[2], "Prozesse: %d", buf.prozesse);
+        sprintf(frame1.page[3], "Uptime: %0.2fh", buf.uptime);
+        printf("%s %s %s %s \n", frame1.page[0], frame1.page[1], frame1.page[2], frame1.page[3]);
+        sem_post(gelesen);
+        if (write(socket_fd, &frame0, sizeof(frame0)) != sizeof(frame0))
+            err(EXIT_FAILURE, "partial/failed write\n");
+        usleep(10000);
+        if (write(socket_fd, &frame1, sizeof(frame0)) != sizeof(frame0))
             err(EXIT_FAILURE, "partial/failed write\n");
         sleep(1);
     }
-    if (shmdt(shmaddress) == -1) {
-        perror("Fehler bei shmdt in reader");
-        return EXIT_FAILURE;
-    }
+    shmdt(shmaddress);
 
     //ToDo Ende
-
-    //Hier wird ein frame an das EduTerm gesendet!
-    if (write(socket_fd, &frame, sizeof(frame)) != sizeof(frame))
-        err(EXIT_FAILURE, "partial/failed write\n");
 
     //UDP Socket wieder schliessen
     close(socket_fd);

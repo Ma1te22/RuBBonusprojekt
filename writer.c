@@ -12,10 +12,11 @@
 
 
  typedef struct {
-    float cpu;
-    float ram;
-    float uptime;
-    int prozesse;
+     float memtotal;
+     float cpu;
+     float ram;
+     float uptime;
+     int prozesse;
 }data;
 
 int terminieren=0;
@@ -54,10 +55,7 @@ int main (){
         return EXIT_FAILURE;
     }
 
-    if (sem_wait(shmzugriff) == -1) {
-        perror("Fahler bei sem_wait in writer");
-        return EXIT_FAILURE;
-    }
+    sem_wait(shmzugriff);
     int shm_id=shmget(345345, sizeof(data), 0666 | IPC_CREAT| IPC_EXCL);
     if (shm_id==-1) {
         shm_id=shmget(345345, 0, 0);
@@ -69,16 +67,11 @@ int main (){
     }
     void *address;
     address =shmat(shm_id, NULL, 0666 | IPC_CREAT| IPC_EXCL);
-    if (sem_post(shmzugriff) == -1) {
-        perror("Fehler bei sem_post in writer");
-    }
+    sem_post(shmzugriff);
 
 
     while(terminieren==0) {
-        if (sem_wait(gelesen) == -1) {
-            perror("Fehler bei sem_wait in writer");
-            return EXIT_FAILURE;
-        }
+        sem_wait(gelesen);
         sg_cpu_percents *cpu=sg_get_cpu_percents(&cpuN); //cpu zeigt auf Struktur
         sg_mem_stats *mem = sg_get_mem_stats(&memN);
         sg_host_info *host = sg_get_host_info(&hostN);
@@ -91,45 +84,25 @@ int main (){
         }
 
         data aktData={
+            mem->total,
             100-((*cpu).idle),
             100*((float)mem->used)/((float)mem->total),
             (host->uptime)/3600.0,
             ps->total
         };
-        if (sem_wait(shmzugriff) == -1) {
-        perror("Fehler bei sem_wait in writer");
-        return EXIT_FAILURE;
-        }
+        sem_wait(shmzugriff);
         //printf("geschrieben");
         memcpy(address, &aktData, sizeof(aktData));
-        if (sem_post(shmzugriff) == -1) {
-            perror("Fehler bei sem_post in writer");
-            return EXIT_FAILURE;
-        }
-        if (sem_post(geschrieben) == -1) {
-            perror("Fehler bei sem_post in writer");
-            return EXIT_FAILURE;
-        }
+        sem_post(shmzugriff);
+        sem_post(geschrieben);
 
         sleep(1);
     }
 
     sg_shutdown();
-    if (shmdt(address) == -1) {
-        perror("Fehler bei shmdt in writer");
-        return EXIT_FAILURE;
-    }
-    if (sem_close(shmzugriff) == -1) {
-        perror("Fehler bei sem_close in writer");
-        return EXIT_FAILURE;
-    }
-    if (sem_close(geschrieben) == -1) {
-        perror("Fehler bei sem_close in writer");
-        return EXIT_FAILURE;
-    }
-    if (sem_close(gelesen) == -1) {
-        perror("Fehler bei sem_close in writer");
-        return EXIT_FAILURE;
-    }
+    shmdt(address);
+    sem_close(shmzugriff);
+    sem_close(geschrieben);
+    sem_close(gelesen);
 
 }

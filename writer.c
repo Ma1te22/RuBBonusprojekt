@@ -91,7 +91,6 @@ int main (){
             ps->total
         };
         sem_wait(shmzugriff);
-        //printf("geschrieben");
         memcpy(address, &aktData, sizeof(aktData));
         sem_post(shmzugriff);
         sem_post(geschrieben);

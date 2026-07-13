@@ -71,7 +71,6 @@ int main (int argc, char **argv){
     dataframe frame0;
     dataframe frame1;
 
-    //TODO: Shared Memory auslesen, frame(s) befüllen und absenden
     typedef struct{
         float memtotal;
         float cpu;
@@ -99,7 +98,10 @@ int main (int argc, char **argv){
     }
 
 
-    sem_wait(shmzugriff);
+    if (sem_wait(shmzugriff) == -1) {
+        perror("Fehler bei sem_wait in reader");
+        return EXIT_FAILURE;
+    }
     int shm_id=shmget(345345,sizeof(data), 0666 | IPC_CREAT| IPC_EXCL);
     if (shm_id==-1) {
         shm_id=shmget(345345, 0, 0);
@@ -109,18 +111,37 @@ int main (int argc, char **argv){
         }
     }
     void *shmaddress = shmat(shm_id, NULL, 0666 | IPC_CREAT| IPC_EXCL);
-    sem_post(shmzugriff);
-    sem_post(gelesen);
+    if (sem_post(shmzugriff) == -1) {
+        perror("Fehler bei sem_post in reader");
+        return EXIT_FAILURE;
+    }
+    if (sem_post(gelesen) == -1) {
+        perror("Fehler bei sem_post in reader");
+        return EXIT_FAILURE;
+    }//signalisiert, dass reader bereit
     frame0.pageNo=0;
     frame1.pageNo=1;
 
     data buf;
 
-    sem_wait(geschrieben);
-    sem_post(geschrieben);
-    sem_wait(shmzugriff);
-    memcpy(&buf, shmaddress,sizeof(buf)); //maximal Größe des structs lesen
-    sem_post(shmzugriff);
+    if (sem_wait(geschrieben) == -1) {
+        perror("Fehler bei sem_wait in reader");
+        return EXIT_FAILURE;
+    }
+    if (sem_post(geschrieben) == -1) {
+        perror("Fehler bei sem_post in writer");
+        return EXIT_FAILURE;
+    }//liest erst, wenn einmal geschrieben wurde
+
+    if (sem_wait(shmzugriff) == -1) {
+        perror("Fehler bei sem_wait in reader");
+        return EXIT_FAILURE;
+    }
+    memcpy(&buf, shmaddress,sizeof(buf)); //maximale Größe des structs lesen
+    if (sem_post(shmzugriff) == -1) {
+        perror("Fehler bei sem_post in reader");
+        return EXIT_FAILURE;
+    }
     sprintf(frame0.page[0], "Systemmonitor");
     sprintf(frame0.page[1], "Willkommen!");
     sprintf(frame0.page[2], "Insgesamt:");
@@ -128,16 +149,28 @@ int main (int argc, char **argv){
     printf("%s %s %s %s \n", frame0.page[0], frame0.page[1], frame0.page[2], frame0.page[3]);
 
     while (terminieren==0) {
-        sem_wait(geschrieben);
-        sem_wait(shmzugriff);
+        if (sem_wait(geschrieben) == -1) {
+            perror("Fehler bei sem_wait in reader");
+            return EXIT_FAILURE;
+        }
+        if (sem_wait(shmzugriff) == -1) {
+            perror("Fehler bei sem_wait in reader");
+            return EXIT_FAILURE;
+        }
         memcpy(&buf, shmaddress,sizeof(buf)); //maximal Größe des structs lesen
-        sem_post(shmzugriff);
+        if (sem_post(shmzugriff) == -1) {
+            perror("Fehler bei sem_post in reader");
+            return EXIT_FAILURE;
+        }
         sprintf(frame1.page[0], "RAM: %.2f", buf.ram);
         sprintf(frame1.page[1], "Cpu-Last: %.2f", buf.cpu);
         sprintf(frame1.page[2], "Prozesse: %d", buf.prozesse);
         sprintf(frame1.page[3], "Uptime: %0.2fh", buf.uptime);
         printf("%s %s %s %s \n", frame1.page[0], frame1.page[1], frame1.page[2], frame1.page[3]);
-        sem_post(gelesen);
+        if (sem_post(gelesen) == -1) {
+            perror("Fehler bei sem_post in reader");
+            return EXIT_FAILURE;
+        }
         if (write(socket_fd, &frame0, sizeof(frame0)) != sizeof(frame0))
             err(EXIT_FAILURE, "partial/failed write\n");
         usleep(10000);
@@ -145,9 +178,11 @@ int main (int argc, char **argv){
             err(EXIT_FAILURE, "partial/failed write\n");
         sleep(1);
     }
-    shmdt(shmaddress);
+    if (shmdt(shmaddress) == -1) {
+        perror("Fehler bei shmdt in reader");
+        return EXIT_FAILURE;
+    }
 
-    //ToDo Ende
 
     //UDP Socket wieder schliessen
     close(socket_fd);
